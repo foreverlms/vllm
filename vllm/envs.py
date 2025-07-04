@@ -127,6 +127,7 @@ if TYPE_CHECKING:
     VLLM_TOOL_PARSE_REGEX_TIMEOUT_SECONDS: int = 1
     VLLM_SLEEP_WHEN_IDLE: bool = False
     VLLM_MQ_MAX_CHUNK_BYTES_MB: int = 16
+    VLLM_FP8_LINEAR_KERNEL: Optional[str] = None
 
 
 def get_default_cache_root():
@@ -870,6 +871,14 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # processes via zmq.
     "VLLM_MQ_MAX_CHUNK_BYTES_MB":
     lambda: int(os.getenv("VLLM_MQ_MAX_CHUNK_BYTES_MB", "16")),
+
+    # Control the fp8 kernel that used for fp8 linear inference.
+    # Available options:
+    # - "marlin": use marlin kernel
+    # - "cutlass": use cutlass kernel
+    # - "torch_scaled_mm": use torch._scaled_mm
+    "VLLM_FP8_LINEAR_KERNEL":
+    lambda: os.getenv("VLLM_FP8_LINEAR_KERNEL", None),
 }
 
 # --8<-- [end:env-vars-definition]

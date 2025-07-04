@@ -193,7 +193,9 @@ class Fp8LinearMethod(LinearMethodBase):
         self.block_quant = self.quant_config.weight_block_size is not None
         self.fp8_linear = Fp8LinearOp(
             # Default to using per_token quantization if cutlass is supported
-            use_per_token_if_dynamic=cutlass_fp8_supported())
+            # use_per_token_if_dynamic=cutlass_fp8_supported(),
+            cutlass_fp8_supported=cutlass_fp8_supported(),
+            use_per_token_if_dynamic=True)
 
     def create_weights(
         self,
@@ -333,7 +335,8 @@ class Fp8LinearMethod(LinearMethodBase):
         # If checkpoint not serialized fp8, quantize the weights.
         elif not self.quant_config.is_checkpoint_fp8_serialized:
             qweight, weight_scale = ops.scaled_fp8_quant(layer.weight,
-                                                         scale=None)
+                                                         scale=None,
+                                                         use_per_token_if_dynamic=True)
 
             # Update the layer with the new values.
             layer.weight = Parameter(qweight.t(), requires_grad=False)
