@@ -3123,6 +3123,7 @@ class GPUModelRunner(
         Returns:
             Model output tensor
         """
+        #lms: Here call model.forward for All models.
         return self.model(
             input_ids=input_ids,
             positions=positions,

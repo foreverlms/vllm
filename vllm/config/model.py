@@ -671,6 +671,7 @@ class ModelConfig:
         cls = "Transformers"
         # If 'hf_config != hf_text_config' it's a nested config, i.e. multimodal
         cls += "MultiModal" if self.hf_config != self.hf_text_config else ""
+        cls += "Mamba" if self.get_mamba_chunk_size() is not None else ""
         cls += "MoE" if self.is_moe else ""
         # Check if the architecture we're wrapping has defaults
         runner = None

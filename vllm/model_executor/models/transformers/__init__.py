@@ -21,6 +21,7 @@ from vllm.model_executor.models.transformers.base import Base
 from vllm.model_executor.models.transformers.causal import CausalMixin
 from vllm.model_executor.models.transformers.legacy import LegacyMixin
 from vllm.model_executor.models.transformers.moe import MoEMixin
+from vllm.model_executor.models.transformers.mamba import MambaMixerMixin
 from vllm.model_executor.models.transformers.multimodal import (
     DYNAMIC_ARG_DIMS,
     MultiModalDummyInputsBuilder,
@@ -67,6 +68,19 @@ class TransformersMultiModalForCausalLM(MultiModalMixin, CausalMixin, Base): ...
 )
 class TransformersMultiModalMoEForCausalLM(
     MoEMixin, MultiModalMixin, CausalMixin, Base
+): ...
+
+
+@MULTIMODAL_REGISTRY.register_processor(
+    MultiModalProcessor,
+    info=MultiModalProcessingInfo,
+    dummy_inputs=MultiModalDummyInputsBuilder,
+)
+@support_torch_compile(
+    dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile
+)
+class TransformersMultiModalMambaMoEForCausalLM(
+    MambaMixerMixin, MoEMixin, MultiModalMixin, CausalMixin, Base
 ): ...
 
 

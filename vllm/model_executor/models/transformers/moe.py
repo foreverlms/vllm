@@ -25,7 +25,7 @@ from vllm.config.utils import getattr_iter
 from vllm.distributed import get_dp_group, get_ep_group
 from vllm.forward_context import ForwardContext, get_forward_context
 from vllm.model_executor.custom_op import CustomOp
-from vllm.model_executor.layers.fused_moe import FusedMoE
+from vllm.model_executor.layers.fused_moe import FusedMoE, activation_without_mul
 from vllm.model_executor.models.interfaces import MixtureOfExperts
 from vllm.model_executor.models.utils import maybe_prefix
 from vllm.platforms import current_platform
@@ -119,8 +119,11 @@ direct_register_custom_op(
 class MoEMixin(MixtureOfExperts):
     def __init__(self, *, vllm_config: "VllmConfig", prefix: str = ""):
         self.check_version("5.0.0", "MoE models support")
+        self.non_gated_moe = True # This should put before super().
+
         # Skip MixtureOfExperts.__init__ and call the next class in MRO
         super(MixtureOfExperts, self).__init__(vllm_config=vllm_config, prefix=prefix)
+
 
     def set_eplb_state(
         self,
@@ -156,9 +159,13 @@ class MoEMixin(MixtureOfExperts):
         Params for weights, fp8 weight scales, fp8 activation scales
         (param_name, weight_name, expert_id, shard_id)
         """
+        common_moe_style = ("gate_proj", "down_proj", "up_proj")
+        if self.non_gated_moe:
+            common_moe_style = ("up_proj", "down_proj", "")
         ckpt_names = [
             # (ckpt_gate_proj_name, ckpt_down_proj_name, ckpt_up_proj_name)
-            ("gate_proj", "down_proj", "up_proj"),  # Most common MoE style
+            common_moe_style, # non-gated MoE for nemotron
+            # ("gate_proj", "down_proj", "up_proj"),  # Most common MoE style
             ("w1", "w2", "w3"),  # Granite, Mixtral, Phi MoE style
             ("linear", "linear_1", "linear_v"),  # Grok1 style
         ]
@@ -226,13 +233,16 @@ class MoEMixin(MixtureOfExperts):
         num_expert_group = getattr(text_config, "n_group", None)
         topk_group = getattr(text_config, "topk_group", None)
 
+        activation = getattr(text_config, "mlp_hidden_act", "silu")
+
         # MoE activation function
-        activation = "silu"
         wrapped_arch = self.config.architectures[0].lower()
         if "gptoss" in wrapped_arch:
             activation = "swigluoai"
         elif "grok1" in wrapped_arch:
             activation = "gelu"
+        elif "nemotron" in wrapped_arch:
+            activation = activation_without_mul(activation)
 
         # Expert mapping for `AutoWeightsLoader`
         expert_mapping = self.get_expert_mapping()
@@ -288,6 +298,8 @@ class MoEMixin(MixtureOfExperts):
                                 self.num_shared_experts = 1
                                 break
                     # Replace experts module with FusedMoE
+                    is_act_and_mul = not self.non_gated_moe
+
                     fused_experts = TransformersFusedMoE(
                         num_experts=num_experts,
                         top_k=top_k,
@@ -306,6 +318,7 @@ class MoEMixin(MixtureOfExperts):
                         num_redundant_experts=num_redundant_experts,
                         has_bias=has_bias,
                         expert_mapping=expert_mapping,
+                        is_act_and_mul =is_act_and_mul, # non-gated MoE for nemotron
                     )
                     mlp.experts = fused_experts
                     log_replacement(qual_name, experts, fused_experts)

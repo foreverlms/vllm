@@ -224,6 +224,7 @@ class OpenAIServingChat(OpenAIServing):
             A tuple of (conversation, engine_prompts) on success,
             or an ErrorResponse on failure.
         """
+        # TODO: (lms) Here the passed in request to be applied chat template.
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
             logger.error("Error with model %s", error_check_ret)
