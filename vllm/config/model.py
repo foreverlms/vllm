@@ -671,6 +671,8 @@ class ModelConfig:
         cls = "Transformers"
         # If 'hf_config != hf_text_config' it's a nested config, i.e. multimodal
         cls += "MultiModal" if self.hf_config != self.hf_text_config else ""
+        should_use_mamba = any("nemotronvl" in arch.lower() for arch in self.hf_config.architectures)
+        cls += "Mamba" if should_use_mamba else ""
         cls += "MoE" if self.is_moe else ""
         # Check if the architecture we're wrapping has defaults
         runner = None

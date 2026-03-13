@@ -306,7 +306,10 @@ def _resolve_chat_template_content_format(
         else _detect_content_format(jinja_text, default="string")
     )
 
-    return detected_format
+    # Note: (lms) We MANUALLY return "openai" to by pass error in Qwen3-VL Chattemplate
+    # If any issues, contact maoshengl@nvidia.com
+    return "openai"
+    # return detected_format
 
 
 @lru_cache
@@ -636,14 +639,12 @@ class HfRenderer(BaseRenderer[HfTokenizer]):
                 model_config=model_config,
             ),
         )
-
         prompt_raw = safe_apply_chat_template(
             model_config,
             tokenizer,
             conversation,
             **params.get_apply_chat_template_kwargs(),
         )
-
         # NOTE: use_unified_vision_chunk is currently specific to Kimi-K2.5
         # model which uses unified vision chunks for both images and videos.
         if (

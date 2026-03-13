@@ -224,6 +224,7 @@ class OpenAIServingChat(OpenAIServing):
             A tuple of (conversation, engine_prompts) on success,
             or an ErrorResponse on failure.
         """
+        # TODO: (lms) Here the passed in request to be applied chat template.
         error_check_ret = await self._check_model(request)
         if error_check_ret is not None:
             logger.error("Error with model %s", error_check_ret)
@@ -292,6 +293,7 @@ class OpenAIServingChat(OpenAIServing):
                 if error_check_ret is not None:
                     return error_check_ret
 
+                # LMS: Here we get the preprocessed chat request.
                 conversation, engine_prompts = await self._preprocess_chat(
                     request,
                     request.messages,
@@ -301,6 +303,7 @@ class OpenAIServingChat(OpenAIServing):
                     tool_dicts=tool_dicts,
                     tool_parser=tool_parser,
                 )
+
             else:
                 # For GPT-OSS.
                 should_include_tools = tool_dicts is not None
@@ -347,6 +350,7 @@ class OpenAIServingChat(OpenAIServing):
         if isinstance(result, ErrorResponse):
             return result
 
+        # Note: LMS: Here we get the preprocessed chat prompt.
         conversation, engine_prompts = result
 
         request_id = (

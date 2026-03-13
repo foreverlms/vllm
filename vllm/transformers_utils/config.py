@@ -400,6 +400,9 @@ def patch_rope_parameters_dict(rope_parameters: dict[str, Any]) -> None:
 
 
 def _uses_mrope(config: PretrainedConfig) -> bool:
+    enable_mrope = getattr(config, "enable_mrope", False)
+    if enable_mrope:
+        return True
     rope_parameters = getattr(config, "rope_parameters", None)
     if rope_parameters is None:
         return False

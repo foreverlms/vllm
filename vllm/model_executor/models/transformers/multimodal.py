@@ -148,7 +148,7 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
         hf_processor_mm_kwargs: Mapping[str, object],
     ) -> Mapping[str, MultiModalFieldConfig]:
         # HF Processors always return a mask but vLLM doesn't need it
-        hf_inputs.pop("attention_mask", None)
+        # hf_inputs.pop("attention_mask", None)
         num_image_patches = hf_inputs.get("num_image_patches")
         mm_fields = {
             key: MultiModalFieldConfig.flat_from_sizes("image", num_image_patches)
@@ -198,6 +198,7 @@ class MultiModalProcessor(BaseMultiModalProcessor[MultiModalProcessingInfo]):
                 # the prompt is the tokenized ids which is not supported
                 # by the hf_processor, which is why we would need to decode the ids
                 # into string
+                # FIXME: (lms) Here prompt is already tokenized, we have to decode it back.
                 prompt = hf_processor.decode(prompt)
 
             # Bypass cached processor and always apply to the full set of mm inputs
@@ -354,6 +355,7 @@ class MultiModalMixin(SupportsMultiModal, SupportsMRoPE):
         num_image_patches = kwargs.pop("num_image_patches")
         kwargs.pop("token_type_ids", None)  # used only in `forward`
         kwargs.pop("mm_token_type_ids", None)  # used only in `model.get_rope_index`
+        kwargs.pop("attention_mask", None) # used only in `model.get_rope_index`
 
         if pixel_values is not None:
             # ROCm: Force math SDP backend for vision encoder to avoid accuracy issues
@@ -448,12 +450,13 @@ class MultiModalMixin(SupportsMultiModal, SupportsMRoPE):
                 "second_per_grid_ts",
                 "audio_feature_lengths",
                 "use_audio_in_video",
+                "attention_mask",
             },
         )
         if any(
             v
             for k, v in kwargs.items()
-            if k not in {"image_grid_thw", "mm_token_type_ids"}
+            if k not in {"image_grid_thw", "mm_token_type_ids", "attention_mask"}
         ):
             raise NotImplementedError(
                 "Transformers modeling backend only supports images."
@@ -462,12 +465,16 @@ class MultiModalMixin(SupportsMultiModal, SupportsMRoPE):
         image_grid_thw = kwargs.get("image_grid_thw", [])
         video_grid_thw = kwargs.get("video_grid_thw", [])
         mm_token_type_ids = kwargs.get("mm_token_type_ids")
+        attention_mask = kwargs.get("attention_mask", [])
 
         image_grid_thw = (torch.stack if image_grid_thw else torch.tensor)(
             image_grid_thw
         )
         video_grid_thw = (torch.stack if video_grid_thw else torch.tensor)(
             video_grid_thw
+        )
+        attention_mask = (torch.stack if attention_mask else torch.tensor)(
+            attention_mask
         )
 
         # In v4 `get_rope_index` doesn't have wildcard `kwargs`, and
@@ -488,10 +495,20 @@ class MultiModalMixin(SupportsMultiModal, SupportsMRoPE):
             if self._get_rope_index_accepts_mm_token_type_ids:
                 kwargs["mm_token_type_ids"] = torch.cat(mm_token_type_ids)
 
+        if video_grid_thw.numel() == 0:
+            video_grid_thw = None
+        if image_grid_thw.numel() == 0:
+            image_grid_thw = None
+        if attention_mask.numel() == 0:
+            attention_mask = None
+        else:
+            attention_mask = attention_mask.squeeze(0)
+
         mrope_positions, mrope_position_delta = self.model.get_rope_index(
             input_ids=torch.tensor(input_tokens).unsqueeze(0),
             image_grid_thw=image_grid_thw,
             video_grid_thw=video_grid_thw,
+            attention_mask=attention_mask,
             **kwargs,
         )
 

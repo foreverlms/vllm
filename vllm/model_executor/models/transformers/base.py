@@ -470,6 +470,8 @@ class Base(
         else:
             position_ids = positions[None, ...]
 
+        vllm_current_stream = torch.cuda.current_stream()
+
         outputs = self.model(
             input_ids=input_ids,
             inputs_embeds=inputs_embeds,
@@ -477,6 +479,7 @@ class Base(
             position_ids=position_ids,
             attention_instances=self.attention_instances,
             return_dict=False,
+            stream=vllm_current_stream,
             **self._output_aux_hidden_states_kwargs,
             **kwargs,
         )
