@@ -105,6 +105,18 @@ class TransformersMultiModalMambaMoEForCausalLM(
     dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile
 )
 class TransformersNemotronVLForCausalLM(
+    NemotronVLDeepstackMixin, MambaMixerMixin, CausalMixin, Base
+): ...
+
+@MULTIMODAL_REGISTRY.register_processor(
+    MultiModalProcessor,
+    info=MultiModalProcessingInfo,
+    dummy_inputs=MultiModalDummyInputsBuilder,
+)
+@support_torch_compile(
+    dynamic_arg_dims=DYNAMIC_ARG_DIMS, enable_if=can_enable_torch_compile
+)
+class TransformersNemotronVLForCausalLMMoE(
     NemotronVLDeepstackMixin, MambaMixerMixin, MoEMixin, CausalMixin, Base
 ): ...
 

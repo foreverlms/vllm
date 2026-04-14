@@ -674,7 +674,10 @@ class ModelConfig:
         should_use_mamba = any("nemotronvl" in arch.lower() for arch in self.hf_config.architectures)
         # NemotronVL has its own class with deepstack support
         if should_use_mamba:
-            return "TransformersNemotronVLForCausalLM"
+            cls = "TransformersNemotronVLForCausalLM"
+            if self.is_moe:
+                cls += "MoE"
+            return cls
         cls += "MoE" if self.is_moe else ""
         # Check if the architecture we're wrapping has defaults
         runner = None
