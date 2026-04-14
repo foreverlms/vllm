@@ -327,8 +327,9 @@ class MultiModalMixin(SupportsMultiModal, SupportsMRoPE):
         bases = self.__class__.mro()[1:-1]
         # Keep only classes defined in `vllm.model_executor.models.transformers`
         bases = [b for b in bases if ".transformers." in b.__module__]
-        # Exclude MultiModalMixin itself
-        bases = [b for b in bases if b is not MultiModalMixin]
+        # Exclude MultiModalMixin and any subclasses (e.g. NemotronVLDeepstackMixin)
+        # to prevent infinite recursion in embed_input_ids → get_language_model → embed_input_ids
+        bases = [b for b in bases if not issubclass(b, MultiModalMixin)]
 
         class LanguageModel(*bases):
             def __init__(self, multimodal_model):
@@ -516,3 +517,102 @@ class MultiModalMixin(SupportsMultiModal, SupportsMRoPE):
         mrope_position_delta = mrope_position_delta[0].item()
 
         return mrope_positions, mrope_position_delta
+
+
+class NemotronVLDeepstackMixin(MultiModalMixin):
+    """
+    Extends MultiModalMixin for NemotronVL models with deepstack vision injection.
+
+    Strategy: monkey-patch language_model.forward (like MoEMixin patches mlp.forward)
+    to substitute deepstack tensors that NemotronSiglip2Model passes as None when
+    pixel_values is absent (the normal vLLM serving path).
+    """
+
+    # Needed to have input_ids available in forward() for visual_pos_masks computation
+    requires_raw_input_tokens = True
+
+    def recursive_replace(self):
+        super().recursive_replace()
+        self._patch_language_model_for_deepstack()
+
+    def _patch_language_model_for_deepstack(self):
+        """Patch language_model.forward to inject deepstack state from the mixin."""
+        language_model = getattr(self.model, "language_model", None)
+        if language_model is None:
+            return
+
+        mixin = self
+        original_forward = language_model.forward
+
+        def deepstack_patched_forward(*args, **kwargs):
+            ds_embeds = getattr(mixin, "_deepstack_embeds", None)
+            if ds_embeds is not None and kwargs.get("deepstack_visual_embeds") is None:
+                kwargs["deepstack_visual_embeds"] = ds_embeds
+                kwargs["visual_pos_masks"] = mixin._visual_pos_masks
+                mixin._deepstack_embeds = None
+                mixin._visual_pos_masks = None
+            return original_forward(*args, **kwargs)
+
+        language_model.forward = deepstack_patched_forward
+
+    def embed_multimodal(self, **kwargs):
+        """
+        Override to capture deepstack features from get_image_features() 4-tuple,
+        storing them for retrieval in forward(). Returns only main image embeddings
+        (same contract as MultiModalMixin.embed_multimodal).
+        """
+        pixel_values = kwargs.get("pixel_values")
+        image_grid_thw = kwargs.get("image_grid_thw")
+
+        if pixel_values is None:
+            self._deepstack_embeds = None
+            return None
+
+        # One call gets both main embeddings and all deepstack features
+        result = self.model.get_image_features(pixel_values, image_grid_thw)
+
+        if isinstance(result, tuple) and len(result) == 4:
+            image_embeds, _, ds_image_embeds, _ = result
+        else:
+            image_embeds = result[0] if isinstance(result, tuple) else result
+            ds_image_embeds = None
+
+        self._deepstack_embeds = ds_image_embeds  # List[Tensor], one per deepstack layer
+        # image_embeds is already a tuple of per-image tensors from torch.split
+        return list(image_embeds)
+
+    def forward(
+        self,
+        input_ids: "torch.Tensor | None",
+        positions: "torch.Tensor",
+        intermediate_tensors=None,
+        inputs_embeds: "torch.Tensor | None" = None,
+        **kwargs,
+    ):
+        """
+        Compute visual_pos_masks from input_ids (available because
+        requires_raw_input_tokens=True), then delegate to Base.forward()
+        skipping MultiModalMixin.forward()'s kwargs stripping.
+        """
+        ds_embeds = getattr(self, "_deepstack_embeds", None)
+        if ds_embeds is not None and input_ids is not None:
+            image_token_id = self.config.image_token_id
+            vis_mask = input_ids == image_token_id
+            vid_id = getattr(self.config, "video_token_id", None)
+            if vid_id is not None:
+                vis_mask = vis_mask | (input_ids == vid_id)
+            self._visual_pos_masks = vis_mask.unsqueeze(0)  # [1, seq]
+
+        # Standard kwarg filtering (same as MultiModalMixin.forward)
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k == "token_type_ids"}
+
+        # Skip MultiModalMixin.forward (would strip our state); MambaMixerMixin/MoEMixin
+        # have no forward(), so super(MultiModalMixin, self) lands on Base.forward().
+        # Pass input_ids=None — inputs_embeds already has image features scattered.
+        return super(MultiModalMixin, self).forward(
+            input_ids=None,
+            positions=positions,
+            intermediate_tensors=intermediate_tensors,
+            inputs_embeds=inputs_embeds,
+            **filtered_kwargs,
+        )

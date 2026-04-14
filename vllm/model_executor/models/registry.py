@@ -580,6 +580,10 @@ _TRANSFORMERS_BACKEND_MODELS = {
         "transformers",
         "TransformersMultiModalMambaMoEForCausalLM",
     ),
+    "TransformersNemotronVLForCausalLM": (
+        "transformers",
+        "TransformersNemotronVLForCausalLM",
+    ),
     "TransformersMultiModalMoEForCausalLM": (
         "transformers",
         "TransformersMultiModalMoEForCausalLM",
